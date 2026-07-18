@@ -1,0 +1,373 @@
+\documentclass[12pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{setspace}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{cite}
+
+\doublespacing
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+
+\title{\textbf{Vector Spaces, Linear Transformations, and LU Factorization\\ in Infectious Disease Modeling}}
+\author{Charlene Miciano - EN609}
+\date{June 23, 2026}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\newpage
+
+% -------------------------------------------------------
+\section*{1. \quad What Is Compartmental Disease Modeling and Why Does It Matter?}
+% -------------------------------------------------------
+
+Infectious disease modeling is one of the most practically significant subfields of applied
+mathematics. When a new pathogen emerges, public health authorities must answer a
+deceptively simple question: \emph{will this disease spread through the population, or will
+it die out?} Epidemiologists could not answer this question without the mathematical
+foundations that lie in the linear algebra concepts we have studied in Modules 1--5:
+\textbf{vector spaces}, \textbf{linear transformations}, \textbf{matrix inverses solved
+via LU factorization}, and \textbf{elementary row operations}. With my background in
+public health modeling, I have decided to dedicate this application paper to ``pull back
+the curtain'' and truly understand the origins of one of the most used methods in
+infectious disease modeling that I personally use in my own work in Tuberculosis modeling.
+
+The dominant modeling framework is the \emph{compartmental model}, which divides a
+population into mutually exclusive subgroups (``compartments'') and tracks the flow of
+individuals between them over time. The canonical example is the SIR model, which
+partitions every person into one of three states:
+
+\begin{itemize}
+  \item $S$ --- \textbf{Susceptible}: individuals who have not yet been infected and can
+  acquire the disease.
+  \item $I$ --- \textbf{Infectious}: individuals who are currently infected and can
+  transmit the pathogen.
+  \item $R$ --- \textbf{Recovered} (or Removed): individuals who have cleared the
+  infection and are immune.
+\end{itemize}
+
+More realistic diseases require more compartments. Tuberculosis, for instance, features a
+long latency period where a person harbors the bacterium without being infectious; this
+necessitates an Exposed ($E$) state, giving the \textbf{SEIR} model. A TB cascade-of-care
+model might further subdivide populations by treatment status, loss to follow-up (LTFU),
+and drug resistance, producing state spaces with ten or more compartments.
+
+The central question in each of these models is captured by a single number: the
+\textbf{basic reproduction number} $R_0$. Informally, $R_0$ is the average number of
+new infections caused by a single infected individual introduced into a fully susceptible
+population \cite{diekmann2010}. The threshold criterion is as follows:
+\[
+  \text{if } R_0 < 1, \text{ the disease dies out}; \qquad
+  \text{if } R_0 > 1, \text{ the disease spreads.}
+\]
+
+The matrix theory concepts that underly the computing of $R_0$ in structured populations is the
+\textbf{next-generation matrix} (NGM), introduced formally by Diekmann, Heesterbeek,
+and Metz in 1990 \cite{diekmann1990} and systematized for compartmental ODE models by
+van den Driessche and Watmough in 2002 \cite{vddriessche2002}. Constructing the NGM
+requires us to view the state space of infected individuals as a \textbf{vector space},
+decompose the disease dynamics into two \textbf{linear transformations} ($F$ and $V$),
+and invert $V$ using \textbf{LU factorization}. In staged disease models, this inversion
+reduces to simply forward substitution on a lower-triangular system. The product
+$K = FV^{-1}$ is the NGM, a linear transformation whose entries encode the expected
+number of new infections each compartment generates.
+
+New terms introduced in this paper: \textbf{compartmental model},
+\textbf{disease-free equilibrium (DFE)}, \textbf{next-generation matrix (NGM)},
+\textbf{basic reproduction number $R_0$}, \textbf{transmission matrix $F$},
+\textbf{transition matrix $V$}, \textbf{M-matrix} (a square matrix with non-positive
+off-diagonal entries whose determinant is strictly positive, guaranteeing invertibility),
+and \textbf{Z sign pattern} (a matrix whose off-diagonal entries are all non-positive).
+
+% -------------------------------------------------------
+\section*{2. \quad The Mathematical Framework}
+% -------------------------------------------------------
+
+\subsection*{2.1 \quad The State Space as a Vector Space}
+
+Let a disease model have $n$ total compartments. We represent the population's state at
+time $t$ as a vector $\mathbf{x}(t) = (x_1, x_2, \ldots, x_n)^T \in \mathbb{R}^n_{\geq 0}$.
+The first $m$ components correspond to \emph{infected} compartments (e.g., $E$ and $I$
+in an SEIR model); the remaining $n - m$ components are \emph{uninfected} (e.g., $S$
+and $R$). This infected subspace $\mathbb{R}^m \subset \mathbb{R}^n$ is the vector space
+on which the NGM acts as a linear transformation. The fact that $\mathbf{x}(t)$ lives in
+$\mathbb{R}^n_{\geq 0}$ reflects the real-world biological constraint (no negative people)
+that imposes important structural properties on $F$ and $V$.
+
+The dynamics of the full system are governed by a system of ODEs:
+\[
+  \dot{x}_i = \mathcal{F}_i(\mathbf{x}) - \mathcal{V}_i(\mathbf{x}), \quad i = 1, \ldots, n,
+\]
+where $\mathcal{F}_i(\mathbf{x})$ is the rate at which \emph{new infections} enter
+compartment $i$, and $\mathcal{V}_i(\mathbf{x})$ captures all other flows: progression
+through disease stages, recovery, death, and movement in and out via treatment
+\cite{vddriessche2002}.
+
+\subsection*{2.2 \quad Linearization at the Disease-Free Equilibrium}
+
+The \textbf{disease-free equilibrium (DFE)}, denoted $\mathbf{x}^0$, is the point where
+all infected compartments are empty. To study whether a small introduction of infectious
+individuals will grow or decay, we linearize the infected subsystem at $\mathbf{x}^0$ by
+taking partial derivatives. The resulting Jacobian of the infected subsystem decomposes as:
+\[
+  \left.\frac{\partial \mathbf{f}}{\partial \mathbf{x}}\right|_{\mathbf{x}^0,\,\text{infected}} = F - V,
+\]
+where $F = \left[\frac{\partial \mathcal{F}_i}{\partial x_j}(\mathbf{x}^0)\right]$ and
+$V = \left[\frac{\partial \mathcal{V}_i}{\partial x_j}(\mathbf{x}^0)\right]$ are both
+$m \times m$ matrices \cite{vddriessche2002}. Their key structural properties are:
+
+\begin{itemize}
+  \item $F$ is \textbf{non-negative}: every entry is a rate of new infection production,
+  which must be $\geq 0$ by biology.
+  \item $V$ is an \textbf{M-matrix}: it has non-positive off-diagonal entries (inflows from
+  other infected classes) and positive diagonal entries (total outflows from each
+  compartment). The conditions of the model force $\det(V) > 0$, so $V$ is
+  \textbf{invertible}, and moreover $V^{-1} \geq 0$ entry-wise \cite{vddriessche2002}.
+\end{itemize}
+
+These two matrices are \textbf{linear transformations} on $\mathbb{R}^m$. The
+transformation $F$ maps a current distribution of infected individuals to the rate of new
+infections it generates; $V$ maps that same distribution to the rate at which individuals
+transition out of infected states. Separating these two processes is the conceptual core of
+the NGM method \cite{diekmann2010}.
+
+\subsection*{2.3 \quad $V^{-1}$ as a Linear Transformation: Time-in-Compartment}
+
+Before computing $K = FV^{-1}$, we should understand what $V^{-1}$ means as a linear
+transformation, because its epidemiological interpretation is what makes the NGM readable.
+
+With reinfection turned off, the infected subsystem evolves as $\dot{\mathbf{w}} = -V\mathbf{w}$,
+whose solution is $\mathbf{w}(t) = e^{-Vt}\mathbf{w}(0)$. Integrating from $t = 0$ to
+$\infty$ gives the total time each compartment is occupied:
+\[
+  \int_0^\infty e^{-Vt}\, dt = V^{-1}.
+\]
+This means the $(j,k)$ entry of $V^{-1}$ is the \textbf{expected total time} an individual
+introduced into compartment $k$ spends in compartment $j$ over their entire infectious
+career, barring reinfection \cite{vddriessche2002}. Combined with the fact that the $(i,j)$
+entry of $F$ is the \textbf{rate} at which an individual in compartment $j$ generates new
+infections in compartment $i$, the $(i,k)$ entry of $K = FV^{-1}$ is:
+\begin{align*}
+  K_{ik} = \,&\text{expected number of new infections in compartment } i \\
+             &\text{generated by one individual seeded in compartment } k.
+\end{align*}
+In other words, $K = FV^{-1}$ is a linear transformation that maps a vector of initial
+infection seeds to the vector of infections in the next generation \cite{diekmann1990}.
+
+% -------------------------------------------------------
+\section*{3. \quad Illustrative Example: The TB Treatment Model}
+% -------------------------------------------------------
+
+To make the framework concrete, we work through the SEIR-with-treatment model from
+van den Driessche and Watmough \cite{vddriessche2002}, which directly mirrors the TB
+models I work with. The population is divided into four compartments: $S$ (susceptible),
+$E$ (exposed/latent), $I$ (infectious), and $T$ (treated), with infected compartments $E$
+and $I$ giving $m = 2$. The parameters are: $\beta_1$ (transmission rate), $\nu$
+(progression rate from $E$ to $I$), $r_1$ and $r_2$ (treatment rates for $E$ and $I$
+respectively), $p = 1 - q$ (treatment failure probability), and $d$ (natural death rate).
+
+Evaluating the partial derivatives at the DFE (with $S_0 = 1$) gives:
+\[
+  F = \begin{pmatrix} 0 & \beta_1 \\ 0 & 0 \end{pmatrix}, \qquad
+  V = \begin{pmatrix} d + \nu + r_1 & -pr_2 \\ -\nu & d + r_2 \end{pmatrix}.
+\]
+
+The zero in the $(2,1)$ position of $F$ reflects that newly infected individuals enter $E$
+only: no one is placed directly in $I$ upon infection. This means the only
+\textbf{state-at-infection} is $E$ \cite{diekmann2010}, a structural observation that falls
+directly out of examining which rows of $F$ are nonzero.
+
+\textbf{Step 1: Compute $V^{-1}$ via row reduction.}
+
+We augment $V$ with the identity and apply elementary row operations:
+\[
+  \left[\begin{array}{cc|cc}
+    d+\nu+r_1 & -pr_2 & 1 & 0 \\
+    -\nu       & d+r_2 & 0 & 1
+  \end{array}\right].
+\]
+Let $\delta = \det(V) = (d+\nu+r_1)(d+r_2) - \nu p r_2$. Since $V$ is an M-matrix,
+$\delta > 0$ \cite{vddriessche2002}. Row-reducing to the identity on the left yields:
+\[
+  V^{-1} = \frac{1}{\delta}
+  \begin{pmatrix} d + r_2 & pr_2 \\ \nu & d + \nu + r_1 \end{pmatrix}.
+\]
+Every entry of $V^{-1}$ is non-negative (since all parameters are positive and
+$\delta > 0$), confirming the time-in-compartment interpretation.
+
+\textbf{Step 2: Form the NGM $K = FV^{-1}$.}
+
+\[
+  K = \begin{pmatrix} 0 & \beta_1 \\ 0 & 0 \end{pmatrix}
+      \cdot
+      \frac{1}{\delta}\begin{pmatrix} d + r_2 & pr_2 \\ \nu & d + \nu + r_1 \end{pmatrix}
+    = \frac{1}{\delta}
+      \begin{pmatrix} \beta_1\nu & \beta_1(d+\nu+r_1) \\ 0 & 0 \end{pmatrix}.
+\]
+
+\textbf{Step 3: Read $R_0$ from the structure of $K$.}
+
+The second row of $K$ is zero, reflecting the fact that $I$ is not a state-at-infection:
+the $I$ compartment produces infections, but no new infections are seeded directly into
+$I$. Row-reducing $K$ (pivoting on the $(1,1)$ entry, which is the only nonzero pivot)
+shows that $K$ has rank 1. When $K$ has rank 1, the NGM generates exactly one
+independent infection pathway, and $R_0$ is the unique nonzero entry in the row-echelon
+form of $K$:
+\[
+  \boxed{R_0 = \frac{\beta_1\nu}{\delta} = \frac{\beta_1\nu}{(d+\nu+r_1)(d+r_2) - \nu p r_2}.}
+\]
+
+\textbf{Interpretation.} The numerator $\beta_1\nu$ is the product of the transmission
+rate and the rate at which latent individuals progress to infectiousness. The denominator
+$\delta$ encodes the total competition between disease progression and all forms of outflow
+(death, treatment, treatment failure cycling). As treatment improves through larger $r_1$,
+$r_2$, or $q$, $\delta$ increases, $R_0$ decreases, and the linear transformation $K$
+shrinks the next generation. In other words, better treatment reduces epidemic potential.
+
+% -------------------------------------------------------
+\section*{4. \quad Advanced Example: LU Factorization and the Staged Progression Model}
+% -------------------------------------------------------
+
+\subsection*{4.1 \quad Structure of the Staged Progression Model}
+
+The TB treatment example above used a $2 \times 2$ matrix $V$ that we inverted by row
+reduction. In a \textbf{staged progression model}, infected individuals move sequentially
+through $m$ disease stages with changing infectivity. This framework applies directly to
+HIV, TB drug-resistance progression, and multi-stage cascade-of-care models. In this
+setting, the matrix $V$ takes on a lower-bidiagonal structure that is solved by forward
+substitution, which is the solve step of \textbf{LU factorization} with $L = V$ and $U = I$.
+
+The model has a single susceptible compartment $S$ and $m$ infectious stages
+$I_1, I_2, \ldots, I_m$, with progression rate $\nu_i$ out of stage $i$ and
+disease-induced death rate $d_i$ at stage $i$ \cite{vddriessche2002}. The infected
+subsystem linearized at the DFE gives:
+\[
+  F = \begin{pmatrix}
+    \beta_1 & \beta_2 & \cdots & \beta_{m-1} & 0 \\
+    0       & 0       & \cdots & 0           & 0 \\
+    \vdots  &         &        &             & \vdots \\
+    0       & 0       & \cdots & 0           & 0
+  \end{pmatrix},
+  \qquad
+  V = \begin{pmatrix}
+    \nu_1+d_1 & 0         & 0         & \cdots & 0   \\
+    -\nu_1    & \nu_2+d_2 & 0         & \cdots & 0   \\
+    0         & -\nu_2    & \nu_3+d_3 & \cdots & 0   \\
+    \vdots    &           & \ddots    & \ddots & \vdots \\
+    0         & 0         & \cdots    & -\nu_{m-1} & d_m
+  \end{pmatrix},
+\]
+where the final stage $I_m$ has zero infectivity ($\beta_m = 0$) due to morbidity, and
+$\nu_m := 0$ is set for notational convenience \cite{vddriessche2002}. Because $V$ is
+already lower triangular, it is its own $L$ factor in an LU decomposition with $U = I$.
+
+\subsection*{4.2 \quad Lemma: $F$ is Non-Negative and $V$ is an Invertible M-Matrix}
+
+The following result from van den Driessche and Watmough \cite{vddriessche2002} (Lemma 1)
+establishes the two structural properties that make the NGM well-defined. All of the
+epidemiological assumptions cited below are stated formally in that paper; here we describe
+them in plain terms.
+
+\begin{theorem}[Lemma 1, van den Driessche \& Watmough \cite{vddriessche2002}]
+Let $\mathbf{x}^0$ be a DFE of the compartmental model. Under the biological assumptions
+of the model (non-negativity of population counts, no immigration of infectives, and
+stability of the DFE in the absence of infection), the matrices $F$ and $V$ defined by the
+linearization at $\mathbf{x}^0$ satisfy: (i) $F \geq 0$ entry-wise, (ii) $V$ is a nonsingular
+M-matrix, and (iii) $V^{-1} \geq 0$ entry-wise.
+\end{theorem}
+
+\begin{proof}[Proof summary, following van den Driessche \& Watmough \cite{vddriessche2002}]
+We summarize the three conclusions in turn.
+
+\textbf{(i) $F \geq 0$.} The function $\mathcal{F}_i(\mathbf{x})$ counts new infections
+entering compartment $i$, so it is non-negative for all $\mathbf{x} \geq 0$ by biology. At
+the DFE, the biological assumptions also require $\mathcal{F}_i(\mathbf{x}^0) = 0$ for
+infected compartments (since there is no disease present to generate new infections). The
+entry $F_{ij} = \frac{\partial \mathcal{F}_i}{\partial x_j}(\mathbf{x}^0)$ is a one-sided
+limit of the form $\lim_{h \to 0^+} [\mathcal{F}_i(\mathbf{x}^0 + h\mathbf{e}_j) -
+\mathcal{F}_i(\mathbf{x}^0)]/h$. Because $\mathcal{F}_i \geq 0$ and
+$\mathcal{F}_i(\mathbf{x}^0) = 0$, this limit is $\geq 0$. Thus $F \geq 0$.
+
+\textbf{(ii) $V$ is a nonsingular M-matrix.} We show $V$ has the Z sign pattern and
+positive diagonal, which together with the stability assumption imply $V$ is a nonsingular
+M-matrix. For the off-diagonal entries: if compartment $i$ is empty ($x_i = 0$), no
+individuals can leave it, so $\mathcal{V}^-_i(\mathbf{x}) = 0$. The entry $V_{ij}$ for
+$i \neq j$ is the partial derivative of net outflow from compartment $i$ with respect to
+$x_j$. Because $x_i = 0$ forces $\mathcal{V}^-_i(\mathbf{x}^0 + h\mathbf{e}_j) \leq 0$,
+we get $V_{ij} \leq 0$ for $i \neq j$, giving the Z sign pattern. The biological assumption
+that the DFE is stable when $F = 0$ forces all eigenvalues of $-V$ to have negative real
+parts, which is equivalent to $V$ having all eigenvalues with positive real parts. A matrix
+with the Z sign pattern and positive real-part eigenvalues is by definition a nonsingular
+M-matrix, so $\det(V) > 0$ and $V$ is invertible.
+
+\textbf{(iii) $V^{-1} \geq 0$.} A standard result in the theory of M-matrices states that
+if $V$ is a nonsingular M-matrix, then $V^{-1} \geq 0$ entry-wise \cite{vddriessche2002}.
+Intuitively, this is consistent with the time-in-compartment interpretation: expected times
+are non-negative.
+
+This lemma is the structural foundation of the entire NGM framework. Once we know
+$F \geq 0$, $V^{-1} \geq 0$, and $\det(V) > 0$, the product $K = FV^{-1}$ is
+well-defined and non-negative, and its entries carry the infection-generation interpretation
+described in Section 2.3.
+\end{proof}
+
+\subsection*{4.3 \quad Reading $R_0$ from $K = FV^{-1}$}
+
+Since only the first row of $F$ is nonzero, $K = FV^{-1}$ also has only a nonzero first
+row, and $R_0$ is the sum of the first-row entries of $K$. Using the closed-form entries
+of $V^{-1}$ that follow from forward substitution on the lower-triangular $V$
+\cite{vddriessche2002} (equation 12 therein):
+\[
+  R_0 = \sum_{j=1}^{m-1} \beta_j \cdot (V^{-1})_{1j}
+      = \frac{\beta_1}{\nu_1+d_1}
+        + \frac{\beta_2\nu_1}{(\nu_1+d_1)(\nu_2+d_2)}
+        + \cdots
+        + \frac{\beta_{m-1}\prod_{k=1}^{m-2}\nu_k}{\prod_{k=1}^{m-1}(\nu_k+d_k)}.
+\]
+Each term is transparent: the $j$-th term is the product of $\beta_j$ (infectivity in stage
+$j$) and the fraction of individuals originally seeded in stage 1 who survive to reach stage
+$j$, multiplied by the time they spend there. LU factorization via forward substitution on a
+lower-triangular $V$ delivers this interpretation directly.
+
+In a TB cascade-of-care model, adding more stages (diagnosed, on-treatment, LTFU,
+re-treated) extends the size of $V$ but preserves its lower-bidiagonal structure. Each new
+stage appends one row and one column, and forward substitution remains the efficient path
+to $V^{-1}$. The NGM makes each intervention lever visible as a distinct entry in a linear
+transformation, giving both modelers and policymakers a precise handle on which parameters
+most influence $R_0$. After learning about and using compartmental models in public health
+research for the past 3 years, it is incredible to finally understand how the methods were
+developed and the matrix theory concepts that made it possible.
+
+\newpage
+\begin{thebibliography}{9}
+
+\bibitem{diekmann1990}
+O.\ Diekmann, J.\ A.\ P.\ Heesterbeek, and J.\ A.\ J.\ Metz,
+``On the definition and the computation of the basic reproduction ratio $R_0$ in
+models for infectious diseases in heterogeneous populations,''
+\textit{Journal of Mathematical Biology}, vol.\ 28, pp.\ 365--382, 1990.
+
+\bibitem{diekmann2010}
+O.\ Diekmann, J.\ A.\ P.\ Heesterbeek, and M.\ G.\ Roberts,
+``The construction of next-generation matrices for compartmental epidemic models,''
+\textit{Journal of the Royal Society Interface}, vol.\ 7, no.\ 47, pp.\ 873--885, 2010.
+
+\bibitem{vddriessche2002}
+P.\ van den Driessche and J.\ Watmough,
+``Reproduction numbers and sub-threshold endemic equilibria for compartmental models
+of disease transmission,''
+\textit{Mathematical Biosciences}, vol.\ 180, pp.\ 29--48, 2002.
+
+\end{thebibliography}
+
+\end{document}
