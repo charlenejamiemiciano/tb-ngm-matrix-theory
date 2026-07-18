@@ -1,5 +1,5 @@
 # Vector Spaces, Linear Transformations, and LU Factorization in Infectious Disease Modeling
-
+**[Read the paper (PDF)](https://github.com/charlenejamiemiciano/tb-ngm-linear-algebra/blob/main/ngm_final.pdf)**
 An applied linear algebra paper connecting core concepts (vector spaces, linear
 transformations, LU factorization) to the next-generation matrix (NGM) method — the
 standard technique for computing the basic reproduction number (R0) in structured
